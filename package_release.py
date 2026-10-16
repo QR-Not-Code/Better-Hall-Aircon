@@ -44,7 +44,7 @@ for directory in ['studio', 'ui', 'tests']:
         shutil.copy2(source, target)
 for name in ['main.py', 'requirements.txt', 'build.py', 'README.md', 'VERIFICATION.md', 'MODULES.md', 'CLOUD.md']:
     shutil.copy2(root / name, source_root / name)
-archive = root / 'HallAirconStudio-Windows.zip'
+archive = root / os.environ.get('HALLAIRCON_RELEASE_ARCHIVE', 'HallAirconStudio-Windows.zip')
 with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as z:
     for path in sorted(release.rglob('*')):
         if not path.is_file(): continue
@@ -53,3 +53,6 @@ with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as z:
             raise SystemExit('Refusing to package a private data file.')
         z.write(path, Path('HallAirconStudio') / path.relative_to(release))
 print('Portable archive:', archive.name, 'MB:', round(archive.stat().st_size / 1_000_000, 1))
+import hashlib
+checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
+archive.with_suffix('.sha256').write_text(checksum + '  ' + archive.name + '\n', encoding='utf-8')

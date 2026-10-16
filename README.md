@@ -1,11 +1,23 @@
 # Better Hall Aircon · 宿舍空调工作台
 
+## 0.2.0：更新与语言
+
+v0.2.0 发布日期：2026-10-17。下载见 [最新 Release](https://github.com/QR-Not-Code/Better-Hall-Aircon/releases/latest)。
+
+- 启动后在后台读取 `QR-Not-Code/Better-Hall-Aircon` 的最新正式 Release；没有新版或临时无法联网时不会打断启动。左侧也可手动“检查更新”。检查使用公开接口，不发送 Token、房间编号或其他账号数据。
+- 有可安装的新版才弹窗；“跳过本次”只跳过本次检查，下次启动会再次检查。确认更新后下载便携 ZIP，核对 GitHub 提供的 SHA-256、配套校验文件和实际下载内容；校验不通过不会替换程序。
+- 下载完成后把当前未保存脚本存成“更新前草稿”副本，然后停止脚本与抓包，退出程序，由独立 Windows 助手替换整个安装文件夹并重启。安装文件夹同级保留 `.previous-...` 旧版备份；替换或启动请求失败会尝试回退。新版进程启动后的运行异常无法自动判定，必要时手动使用旧版备份。
+- 电脑需要能访问 GitHub，安装目录的上级目录需要写入权限和足够空间。取消下载或发生网络、校验、权限错误时，原程序可继续使用。旧版备份和失败的临时更新目录可在确认不再需要后手动清理。
+- 账号、Token、脚本、连接器、语言和证书仍使用 `%LOCALAPPDATA%\HallAirconStudio`，升级不覆盖它们。空调保持最后状态；手机 WireGuard 隧道需自行关闭。
+- 左侧“语言 / Language”可在简体中文与 English 之间切换并保存选择。覆盖导航、控制页、连接向导、教程、脚本编辑器、Blockly 标准积木、自定义积木、云端导出界面和主要错误提示；用户编写的脚本名称、变量、文字、代码和外部返回数据保持原文。随附 Markdown 技术文档仍以中文为主。
+- 源码运行时可检查版本，但不会用便携包替换源码。自动更新适用于 Windows 打包版；旧的 v0.1.0 本身没有更新检查功能，需要先手动换用带此功能的版本。
+
 Windows 桌面程序：连接向导、手机抓包教程、授权自动提取、房间校验、空调控制和 Blockly 拼图脚本。
 程序不附带任何人的账号、Token、房间编号、抓包文件或第三方连接配置。
 
-## 下载最新版
+## 下载已发布版本
 
-前往 [GitHub Releases](https://github.com/QR-Not-Code/Better-Hall-Aircon/releases/latest) 下载 Windows 便携 ZIP 和 SHA-256 校验文件。
+[GitHub Releases](https://github.com/QR-Not-Code/Better-Hall-Aircon/releases/latest) 提供已发布便携包。最新 v0.2.0 包含自动更新检查和中英文切换。
 
 ## 启动
 
@@ -109,7 +121,3 @@ DPAPI 保护磁盘上的凭据，不能抵御已控制同一 Windows 用户会�
 - mitmproxy：[WireGuard 模式](https://docs.mitmproxy.org/stable/concepts/modes/#wireguard)
 - WireGuard：[官方客户端](https://www.wireguard.com/install/)
 - Qt：[PySide6](https://doc.qt.io/qtforpython-6/)
-
-## 证书说明
-
-每位用户首次准备连接时，本机自动生成独立的根证书和私钥。不同电脑或旧版命令行工具的同名 mitmproxy 证书不能互相替代；升级后沿用本机用户数据即可保留证书。遇到 CERTIFICATE_VERIFY_FAILED，保持当前隧道与抓包运行，从 http://mitm.it 重新下载当前实例证书，安装并开启完全信任，随后完全退出并重新打开官方 App。私钥、隧道配置和 Token 不应上传仓库。

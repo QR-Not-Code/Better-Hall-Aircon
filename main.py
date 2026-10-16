@@ -54,6 +54,12 @@ def main():
     demo = '--demo' in sys.argv
     store = Store(ROOT / '.demo-data' if demo else None)
     bridge = Bridge(store, ROOT, window, demo)
+    from studio.update_ui import UpdateUI
+    from studio.version import VERSION
+    updater = UpdateUI(window, page, bridge, ROOT)
+    bridge.updater = updater
+    bridge.language_changed.connect(lambda language: window.setWindowTitle('Better Hall Aircon ' + VERSION + (' · Aircon workspace' if language == 'en' else ' · 宿舍空调工作台')))
+    bridge.language_changed.emit(store.config().get('language', 'zh-CN'))
     channel = QWebChannel(page)
     channel.registerObject('backend', bridge)
     page.setWebChannel(channel)
@@ -61,13 +67,18 @@ def main():
     view.setUrl(QUrl.fromLocalFile(str(ROOT / 'ui' / 'index.html')))
     def close(event):
         running = bridge.runner and bridge.runner.is_alive()
-        if running and QMessageBox.question(window, '停止脚本并退出？', '退出会停止当前脚本。空调保持最后状态。') != QMessageBox.Yes:
+        english = store.config().get('language') == 'en'
+        if running and QMessageBox.question(window, 'Stop script and quit?' if english else '停止脚本并退出？', 'Quitting stops the script. The aircon stays in its last state.' if english else '退出会停止当前脚本。空调保持最后状态。') != QMessageBox.Yes:
             event.ignore()
             return
+        updater.stop()
         bridge.shutdown()
         event.accept()
     window.closeEvent = close
     window.show()
+    if not demo and '--smoke' not in sys.argv:
+        QTimer.singleShot(2500, updater.previous_result)
+        QTimer.singleShot(3500, updater.check)
     if '--smoke' in sys.argv:
         def smoke():
             page.runJavaScript('JSON.stringify(window.smokeTest ? window.smokeTest() : ({error:"frontend not ready"}))', lambda value: finish(value))
@@ -107,7 +118,24 @@ def main():
         def finish_cloud():
             view.grab().save(str(ROOT / '.demo-data' / 'cloud-export.png'))
             page.runJavaScript('JSON.stringify(window.cloudSmokeResult)', lambda value: (ROOT / '.demo-data' / 'cloud-smoke.json').write_text(value or '{}', encoding='utf-8'))
-            QTimer.singleShot(300, close_smoke)
+            page.runJavaScript("document.getElementById('cloud-dialog').close();window.smokeLanguage().then(r=>window.languageSmokeResult=r).catch(e=>window.languageSmokeResult={error:e.message});")
+            QTimer.singleShot(800, finish_language)
+        def finish_language():
+            page.runJavaScript('JSON.stringify(window.languageSmokeResult)', lambda value: (ROOT / '.demo-data' / 'language-smoke.json').write_text(value or '{}', encoding='utf-8'))
+            page.runJavaScript("applyLanguage('en');navigate('dashboard');")
+            QTimer.singleShot(500, capture_english)
+        def capture_english():
+            view.grab().save(str(ROOT / '.demo-data' / 'english-dashboard.png'))
+            page.runJavaScript("navigate('setup');setConnectRoute('capture');")
+            QTimer.singleShot(500, capture_english_guide)
+        def capture_english_guide():
+            view.grab().save(str(ROOT / '.demo-data' / 'english-guide.png'))
+            page.runJavaScript("navigate('scripts');")
+            QTimer.singleShot(500, capture_english_scripts)
+        def capture_english_scripts():
+            view.grab().save(str(ROOT / '.demo-data' / 'english-scripts.png'))
+            page.runJavaScript('JSON.stringify(window.smokeTest())', lambda value: (ROOT / '.demo-data' / 'english-blocks-smoke.json').write_text(value or '{}', encoding='utf-8'))
+            QTimer.singleShot(400, close_smoke)
         def close_smoke():
             bridge.shutdown()
             app.quit()

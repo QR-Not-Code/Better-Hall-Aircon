@@ -26,6 +26,7 @@ class Job(QRunnable):
 class Bridge(QObject):
     reply = Signal(str)
     event = Signal(str)
+    language_changed = Signal(str)
 
     def __init__(self, store, resources, parent=None, demo=False):
         super().__init__(parent)
@@ -43,6 +44,10 @@ class Bridge(QObject):
         self.active_verified = False
         self.capture_error = ''
         self.library = Library(store)
+        self._english = json.loads((self.resources / 'ui' / 'locale-en.json').read_text(encoding='utf-8')) if (self.resources / 'ui' / 'locale-en.json').exists() else {}
+
+    def translate(self, text):
+        return self._english.get(text, text) if self.store.config().get('language') == 'en' else text
 
     def publish(self, payload):
         if payload.get('kind') == 'state': self.last_state = payload['state']
@@ -52,6 +57,17 @@ class Bridge(QObject):
     def request(self, request_id, method, payload):
         try:
             data = json.loads(payload or '{}')
+            if method == 'check_updates':
+                if hasattr(self, 'updater'): self.updater.check(manual=True)
+                self.reply.emit(json.dumps({'id': request_id, 'ok': True, 'data': {'checking': not self.demo}}))
+                return
+            if method == 'language':
+                language = data.get('value')
+                if language not in ('zh-CN', 'en'): raise StudioError('不支持的语言。')
+                self.store.update(language=language)
+                self.language_changed.emit(language)
+                self.reply.emit(json.dumps({'id': request_id, 'ok': True, 'data': {'language': language}}))
+                return
             if method in ('copy_cloud_room', 'copy_cloud_connections', 'copy_cloud_state_key'):
                 from PySide6.QtGui import QGuiApplication
                 if method == 'copy_cloud_room':
@@ -88,30 +104,30 @@ class Bridge(QObject):
                 self.reply.emit(json.dumps({'id': request_id, 'ok': True, 'data': {'copied': True}}))
                 return
             if method == 'pick_qr':
-                filename, _ = QFileDialog.getOpenFileName(None, '选择房间二维码图片', '', '图片 (*.png *.jpg *.jpeg *.webp *.bmp)')
+                filename, _ = QFileDialog.getOpenFileName(None, self.translate('选择房间二维码图片'), '', self.translate('图片 (*.png *.jpg *.jpeg *.webp *.bmp)'))
                 data = {'filename': filename}
             elif method == 'import_script':
-                filename, _ = QFileDialog.getOpenFileName(None, '导入脚本', '', '空调脚本 (*.aircon.json *.json)')
+                filename, _ = QFileDialog.getOpenFileName(None, self.translate('导入脚本'), '', self.translate('空调脚本 (*.aircon.json *.json)'))
                 data = {'filename': filename}
             elif method == 'export_script':
-                filename, _ = QFileDialog.getSaveFileName(None, '导出脚本（不包含连接凭据）', '我的空调脚本.aircon.json', '空调脚本 (*.aircon.json)')
+                filename, _ = QFileDialog.getSaveFileName(None, self.translate('导出脚本（不包含连接凭据）'), self.translate('我的空调脚本.aircon.json'), self.translate('空调脚本 (*.aircon.json)'))
                 data['filename'] = filename
             elif method == 'pick_code':
-                filename, _ = QFileDialog.getOpenFileName(None, 'Open Python script', '', 'Python (*.py)')
+                filename, _ = QFileDialog.getOpenFileName(None, self.translate('Open Python script'), '', 'Python (*.py)')
                 data = {'filename': filename}
             elif method == 'export_code':
-                filename, _ = QFileDialog.getSaveFileName(None, 'Save Python script', 'script.py', 'Python (*.py)')
+                filename, _ = QFileDialog.getSaveFileName(None, self.translate('Save Python script'), 'script.py', 'Python (*.py)')
                 data['filename'] = filename
             elif method == 'export_cloud':
-                filename, _ = QFileDialog.getSaveFileName(None, '导出 GitHub Actions（不含个人凭据）', 'HallAircon-GitHub-Actions.zip', 'ZIP (*.zip)')
+                filename, _ = QFileDialog.getSaveFileName(None, self.translate('导出 GitHub Actions（不含个人凭据）'), 'HallAircon-GitHub-Actions.zip', 'ZIP (*.zip)')
                 data['filename'] = filename
             elif method == 'import_ics':
-                filename, _ = QFileDialog.getOpenFileName(None, '选择日历文件', '', '日历 (*.ics)')
+                filename, _ = QFileDialog.getOpenFileName(None, self.translate('选择日历文件'), '', self.translate('日历 (*.ics)'))
                 data = {'filename': filename}
             self.pool.start(Job(lambda: self.execute(request_id, method, data)))
         except Exception as exc:
             message = str(exc) if isinstance(exc, StudioError) else '无法完成本机交互，请重试。'
-            self.reply.emit(json.dumps({'id': request_id, 'ok': False, 'error': message}))
+            self.reply.emit(json.dumps({'id': request_id, 'ok': False, 'error': self.translate(message)}))
 
     def execute(self, request_id, method, data):
         try:
@@ -119,11 +135,12 @@ class Bridge(QObject):
             self.reply.emit(json.dumps({'id': request_id, 'ok': True, 'data': result}, ensure_ascii=False, allow_nan=False))
         except Exception as exc:
             message = str(exc) if isinstance(exc, StudioError) else '操作失败，请检查输入和运行环境。详细凭据未写入日志。'
-            self.reply.emit(json.dumps({'id': request_id, 'ok': False, 'error': message}, ensure_ascii=False))
+            self.reply.emit(json.dumps({'id': request_id, 'ok': False, 'error': self.translate(message)}, ensure_ascii=False))
 
     def settings(self):
         cfg = self.store.config()
-        return {'room': cfg.get('room', ''), 'ip': cfg.get('ip', ''), 'timezone': cfg.get('timezone', 'Asia/Singapore'),
+        from .version import VERSION
+        return {'language': cfg.get('language', 'zh-CN'), 'version': VERSION, 'room': cfg.get('room', ''), 'ip': cfg.get('ip', ''), 'timezone': cfg.get('timezone', 'Asia/Singapore'),
                 'has_token': bool(self.store.token()), 'expiry': self.store.expiry(), 'capabilities': self.device.capabilities(),
                 'ips': self.capture.ips(), 'demo': self.demo,
                 'token_preview': ((self.store.token()[:18] + '…' + self.store.token()[-8:]) if self.store.token() else ''),
