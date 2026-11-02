@@ -37,11 +37,14 @@ class Engine:
         self.trusted_code = False
         self.script_id = "unsaved"
 
-    def tick(self, node=None):
+    def check_running(self):
         if self.cancel.is_set():
             raise Halt()
         if self.deadline is not None and time.monotonic() > self.deadline:
             raise StudioError('脚本达到本次运行时长上限。')
+
+    def tick(self, node=None):
+        self.check_running()
         self.count += 1
         if self.count > 100000:
             raise StudioError('脚本达到 100000 步上限，请增加停顿或减少循环。')

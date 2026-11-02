@@ -164,7 +164,8 @@ def test_trusted_python_real_subprocess_sdk_and_return(setup):
     assert any(e.get('text') == 'sdk smoke' for e in events)
 
 
-def test_python_timeout_and_cancellation(setup):
+@pytest.mark.parametrize('timeout', [10, None])
+def test_python_timeout_and_cancellation(setup, timeout):
     _, engine, events = setup
     engine.dry = False
     engine.trusted_code = True
@@ -175,7 +176,7 @@ def test_python_timeout_and_cancellation(setup):
     thread = threading.Thread(target=stop)
     thread.start()
     from studio.engine import Halt
-    with pytest.raises(Halt): execute('while True: pass', None, engine, timeout=10)
+    with pytest.raises(Halt): execute('while True: pass', None, engine, timeout=timeout)
     thread.join()
 
 
@@ -195,6 +196,93 @@ def test_code_sdk_wait_respects_code_timeout_and_restores_script_deadline(setup)
     previous = engine.deadline
     started = time.monotonic()
     with pytest.raises(StudioError): execute('ctx.wait(100)', None, engine, timeout=1)
+    assert time.monotonic() - started < 3
+    assert engine.deadline == previous
+
+
+@pytest.mark.parametrize('timeout', [7200, None])
+def test_python_continues_past_one_hour(setup, timeout):
+    _, engine, events = setup
+    engine.dry = False
+    engine.trusted_code = True
+    monotonic = time.monotonic
+    offset = 0
+    previous = engine.deadline = monotonic() + 8000
+
+    def emit(event):
+        nonlocal offset
+        events.append(event)
+        if event.get('text') == 'advance clock':
+            offset = 3700
+
+    engine.emit = emit
+    with patch('studio.code_runtime.time.monotonic', side_effect=lambda: monotonic() + offset):
+        assert execute('ctx.log("advance clock")\nresult = ctx.refresh()["power"]', None, engine, timeout) == 1
+    assert engine.deadline == previous
+
+
+def test_python_supervision_does_not_consume_script_steps(setup):
+    _, engine, _ = setup
+    engine.dry = False
+    engine.trusted_code = True
+    engine.count = 100000
+    assert execute('import time\ntime.sleep(.3)\nresult = 42', None, engine, timeout=None) == 42
+    assert engine.count == 100000
+
+
+def test_full_python_script_inherits_selected_duration(setup):
+    from studio.bridge import Bridge
+    store, _, events = setup
+    bridge = Bridge(store, Path(__file__).resolve().parents[1], demo=True)
+    monotonic = time.monotonic
+    offset = 0
+
+    def publish(event):
+        nonlocal offset
+        events.append(event)
+        if event.get('text') == 'advance clock':
+            offset = 3700
+
+    bridge.publish = publish
+    with patch('studio.code_runtime.time.monotonic', side_effect=lambda: monotonic() + offset):
+        bridge.handle('run_script', {'mode': 'code', 'code': 'ctx.log("advance clock")\nctx.log("still running")',
+                                     'hours': 2, 'dry': False, 'trusted_code': True})
+        bridge.runner.join(5)
+        if bridge.runner.is_alive():
+            bridge.engine.cancel.set()
+            bridge.runner.join(2)
+            pytest.fail('Python script did not finish')
+    assert any(event.get('text') == 'still running' for event in events)
+    assert not any(event['kind'] == 'error' for event in events)
+
+
+def test_python_sdk_wait_respects_script_duration_without_code_timeout(setup):
+    _, engine, _ = setup
+    engine.dry = False
+    engine.trusted_code = True
+    previous = engine.deadline = time.monotonic() + .5
+    started = time.monotonic()
+    with pytest.raises(StudioError):
+        execute('ctx.wait(100)\nctx.control("power", "0")', None, engine, timeout=None)
+    assert time.monotonic() - started < 3
+    assert engine.deadline == previous
+    assert engine.device.demo_state['power'] == 1
+
+
+def test_python_control_confirmation_inherits_script_deadline(setup):
+    _, engine, _ = setup
+    engine.dry = False
+    engine.trusted_code = True
+    previous = engine.deadline = time.monotonic() + .5
+
+    def control(field, value, cancel):
+        assert cancel.wait(100)
+        raise StudioError('Confirmation cancelled')
+
+    engine.device.control = Mock(side_effect=control)
+    started = time.monotonic()
+    with pytest.raises(StudioError):
+        execute('ctx.control("power", "0")', None, engine, timeout=None)
     assert time.monotonic() - started < 3
     assert engine.deadline == previous
 

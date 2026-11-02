@@ -348,7 +348,7 @@ class Bridge(QObject):
                 self.engine.script_id = str(data.get('script_id', 'unsaved'))
                 if data.get('mode') == 'code':
                     validate(data.get('code', ''))
-                    data['program'] = [{'op': 'custom_code', 'source': data['code'], 'timeout': min(float(data.get('hours', 24)) * 3600, 3600)}]
+                    data['program'] = [{'op': 'custom_code', 'source': data['code'], 'timeout': None}]
                 self.runner = threading.Thread(target=self.engine.run, args=(data['program'], data.get('dry', True), data.get('hours', 24)), daemon=True)
                 self.runner.start()
             return {'started': True}

@@ -1,6 +1,7 @@
 """Trusted Python code in a cancellable child process. This is NOT a sandbox."""
 import ast
 import json
+import math
 import queue
 import subprocess
 import sys
@@ -55,6 +56,10 @@ def execute(source, inputs, engine, timeout=60):
         return inputs
     if not engine.trusted_code:
         raise StudioError('代码模式和自定义模块需要勾选“信任本脚本的本机 Python 代码”。')
+    if timeout is not None:
+        timeout = float(timeout)
+        if not math.isfinite(timeout):
+            raise StudioError('代码超时必须为有限秒数。')
     command = [sys.executable, '--code-engine'] if getattr(sys, 'frozen', False) else [sys.executable, str(Path(__file__).resolve().parents[1] / 'main.py'), '--code-engine']
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                text=True, encoding='utf-8', creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
@@ -73,14 +78,20 @@ def execute(source, inputs, engine, timeout=60):
     previous_deadline = engine.deadline
     try:
         send({'source': source, 'inputs': inputs, 'variables': engine.variables})
-        deadline = time.monotonic() + min(max(float(timeout), 1), 3600)
-        engine.deadline = min(previous_deadline, deadline) if previous_deadline is not None else deadline
+        # Full Python scripts inherit the selected script duration. Custom blocks
+        # may add an explicit timeout, without a separate one-hour ceiling.
+        deadline = None if timeout is None else time.monotonic() + max(timeout, 1)
+        deadlines = [value for value in (previous_deadline, deadline) if value is not None]
+        engine.deadline = min(deadlines) if deadlines else None
         class CodeCancel:
             def wait(self, seconds):
-                remaining = max(0, deadline - time.monotonic())
-                return engine.cancel.wait(min(seconds, remaining)) or time.monotonic() >= deadline
-        while time.monotonic() < deadline:
-            engine.tick()
+                duration = seconds
+                if engine.deadline is not None:
+                    duration = min(seconds, max(0, engine.deadline - time.monotonic()))
+                return engine.cancel.wait(duration) or (engine.deadline is not None and time.monotonic() >= engine.deadline)
+        while deadline is None or time.monotonic() < deadline:
+            # Waiting for the child is supervision, not an executed script step.
+            engine.check_running()
             try: message = messages.get(timeout=.1)
             except queue.Empty: continue
             kind = message.get('kind')
@@ -91,6 +102,7 @@ def execute(source, inputs, engine, timeout=60):
             if kind == 'error': raise StudioError(f'自定义代码第 {message.get("line", "?")} 行发生 {message.get("error_type", "Error")}；请检查输入类型与接口名称。')
             if kind == 'closed': raise StudioError('自定义代码进程已退出，未返回结果。')
             if kind == 'rpc':
+                engine.tick()
                 try:
                     args = message.get('args', [])
                     name = message['method']

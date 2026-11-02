@@ -63,7 +63,7 @@ operation('power_flag','空调电源现在 %1',[drop('TARGET',[['已开启','1']
 operation('swing_flag','自动摆风现在 %1',[drop('TARGET',[['已开启','S'],['已关闭','N']])],115,'state_flag',{field:C('flap'),target:F('TARGET')});
 operation('power_changed','检测电源变为 %1 来源 %2',[drop('TARGET',[['开启','1'],['关闭','0'],['任意状态','*']]),drop('SOURCE',sourceChoices)],15,'changed',{field:C('power'),target:F('TARGET'),source:F('SOURCE')});
 operation('swing_changed','检测摆风变为 %1 来源 %2',[drop('TARGET',[['开启','S'],['关闭','N'],['任意状态','*']]),drop('SOURCE',sourceChoices)],15,'changed',{field:C('flap'),target:F('TARGET'),source:F('SOURCE')});
-define('custom_code','用户自定义模块 %1 超时 %2 秒',[textField('NAME','模块名称'),{type:'field_number',name:'TIMEOUT',value:60,min:1,max:3600}],325);
+define('custom_code','用户自定义模块 %1 超时 %2 秒',[textField('NAME','模块名称'),{type:'field_number',name:'TIMEOUT',value:60,min:1}],325);
 expression('custom_value','用户自定义接口 %1 输入 %2',[textField('NAME','接口名称'),val('VALUE')],325);
 for(const type of ['custom_code','custom_value']){
  const init=Blockly.Blocks[type].init;
